@@ -10,11 +10,88 @@
 
 namespace proposed_std
 {
+  namespace detail
+  {
+
+    template <typename T>
+    class pointer_base
+    {
+      public:
+        constexpr pointer_base() noexcept
+        : m_Lock(), m_AccessProxyCount(0), m_pObjectNode(nullptr), m_PointerNode(*this)
+        {
+          detail::init_lock(m_Lock);  // is noexcept
+        }
+
+      protected:
+        using count = std::size_t;
+
+        using lock = detail::lock;
+        using lock_guard = detail::lock_guard;
+
+
+        // do not call while holding the lock as this may cause a dead-lock!
+        void atomic_increment_access_proxy_count() const;
+        void atomic_decrement_access_proxy_count() const;
+
+        count get_access_proxy_count() const;
+
+        lock_guard acquire_lock() const;
+
+        static void register_object(detail::object_node_base& objNode) noexcept;
+
+
+        mutable lock  m_Lock;
+        mutable count m_AccessProxyCount;
+
+        detail::object_node<T>* m_pObjectNode;
+        detail::pointer_node<T> m_PointerNode;
+    };
+
+    template <typename T>
+    void pointer_base<T>::atomic_increment_access_proxy_count() const
+    {
+      lock_guard lock(m_Lock);
+
+      m_AccessProxyCount++;
+    }
+
+    template <typename T>
+    void pointer_base<T>::atomic_decrement_access_proxy_count() const
+    {
+      lock_guard lock(m_Lock);
+
+      m_AccessProxyCount--;
+    }
+
+    template <typename T>
+    typename pointer_base<T>::count pointer_base<T>::get_access_proxy_count() const
+    {
+      return m_AccessProxyCount;
+    }
+
+    template <typename T>
+    typename pointer_base<T>::lock_guard pointer_base<T>::acquire_lock() const
+    {
+      return lock_guard(m_Lock);
+    }
+
+    template <typename T>
+    void pointer_base<T>::register_object(detail::object_node_base& objNode) noexcept
+    {
+      lock_guard lock(detail::object_registry::acquire_lock());
+
+      detail::object_registry::register_object(objNode);
+    }
+
+  }  // namespace detail
+
+
   template <typename T>
   class access_proxy;
 
   template <typename T>
-  class compactable_ptr
+  class compactable_ptr : protected detail::pointer_base<T>
   {
     public:
       using element_type = T;
@@ -34,13 +111,13 @@ namespace proposed_std
       template <class D, class A> 
       compactable_ptr(std::nullptr_t p, D d, A a);
       template <class Y> 
-      compactable_ptr(const compactable_ptr<Y>& r, T* p) noexcept;  // aliasing constructor!
+      compactable_ptr(const compactable_ptr<Y>& r, T* p);  // aliasing constructor!  // diff to shared_ptr: noexcept
       compactable_ptr(const compactable_ptr& r) noexcept;
       template <class Y> 
-      compactable_ptr(const compactable_ptr<Y>& r) noexcept;
+      compactable_ptr(const compactable_ptr<Y>& r);  // diff to shared_ptr: noexcept
       compactable_ptr(compactable_ptr&& r) noexcept;
       template <class Y, class = typename std::enable_if<std::is_convertible<Y*, T*>::value>::type>  // Y* must be convertible to T* 
-      compactable_ptr(compactable_ptr<Y>&& r) noexcept;
+      compactable_ptr(compactable_ptr<Y>&& r); // diff to shared_ptr: noexcept
       compactable_ptr(std::shared_ptr<T>&& r) noexcept;  // TODO: remove??
       template <class Y>
       compactable_ptr(std::shared_ptr<Y>&& r) noexcept;  // TODO: remove??
@@ -90,11 +167,6 @@ namespace proposed_std
       bool owner_before(std::weak_ptr<U> const& b) const;
 
     private:
-      using count = std::size_t;
-
-      using lock         = detail::lock;
-      using lock_guard   = detail::lock_guard;
-
       friend class ::proposed_std::access_proxy<T>;
 
       template <typename Y>
@@ -102,29 +174,13 @@ namespace proposed_std
 
       friend class ::proposed_std::detail::pointer_node_base;
 
-      void atomic_increment_access_proxy_count() const;
-      void atomic_decrement_access_proxy_count() const;
-
-      count get_access_proxy_count() const;
-
-      lock_guard acquire_lock() const;
-
-      static void register_object(detail::object_node_base& objNode) noexcept;
-
-      mutable lock  m_Lock;
-      mutable count m_AccessProxyCount;
-
-      detail::object_node<T>* m_pObjectNode;
-      detail::pointer_node<T> m_PointerNode;
   };
 
   // constructors
   template <typename T>
   constexpr compactable_ptr<T>::compactable_ptr() noexcept
-  : m_Lock(), m_AccessProxyCount(0), m_pObjectNode(nullptr), m_PointerNode(*this)
-  {
-    detail::init_lock(m_Lock);  // is noexcept
-  }
+    : pointer_base()
+  {}
 
   template <typename T>
   template <class Y>
@@ -160,7 +216,7 @@ namespace proposed_std
     std::unique_ptr<node_type> guard_ptr(alloc_traits::allocate(alloc, 1));
     
     // construct node
-    alloc_traits::construct(alloc, guard_ptr.get(), m_PointerNode, p, p, std::move(d), std::move(alloc));  // TODO: ist that move(alloc) OK ???
+    alloc_traits::construct(alloc, guard_ptr.get(), m_PointerNode, p, p, std::move(d), std::move(alloc));  // TODO: is that move(alloc) OK ???
 
     // release guard and get pointer
     m_pObjectNode = guard_ptr.release();
@@ -208,18 +264,18 @@ namespace proposed_std
 
   template <typename T>
   template <class Y>
-  compactable_ptr<T>::compactable_ptr(const compactable_ptr<Y>& r, T* p) noexcept
+  compactable_ptr<T>::compactable_ptr(const compactable_ptr<Y>& r, T* p)  // noexcept
   : compactable_ptr()
   {    
     {
-      // Rational: avoid deadlock in case someone locks the registry first and then tries to lock a pointer
+      // Rational for lock order: avoid deadlock in case someone locks the registry first and then tries to lock a pointer
       lock_guard registry_lock(detail::object_registry::acquire_lock());
       lock_guard other_lock(r.m_Lock);
 
       if (r.m_pObjectNode != nullptr)
       {
         // create node that holds the original node and our pointer
-        m_pObjectNode = new detail::aliasing_object_node<T, Y>(m_PointerNode, p, *r.m_pObjectNode);  // TODO: noexcept vs. bad_alloc!!!
+        m_pObjectNode = new detail::aliasing_object_node<T, Y>(m_PointerNode, p, *r.m_pObjectNode);
       }
       else
       {
@@ -235,7 +291,7 @@ namespace proposed_std
   compactable_ptr<T>::compactable_ptr(const compactable_ptr& r) noexcept
   : compactable_ptr()
   {
-    // Rational: avoid deadlock in case someone locks the registry first and then tries to lock a pointer
+    // Rational for lock order: avoid deadlock in case someone locks the registry first and then tries to lock a pointer
     lock_guard registry_lock(detail::object_registry::acquire_lock());
     lock_guard other_lock(r.m_Lock);
 
@@ -246,10 +302,10 @@ namespace proposed_std
 
   template <typename T>
   template <class Y, class>
-  compactable_ptr<T>::compactable_ptr(compactable_ptr<Y>&& r) noexcept
+  compactable_ptr<T>::compactable_ptr(compactable_ptr<Y>&& r)  // noexcept
   : compactable_ptr()
   {
-    // Rational: avoid deadlock in case someone locks the registry first and then tries to lock a pointer
+    // Rational for lock order: avoid deadlock in case someone locks the registry first and then tries to lock a pointer
     lock_guard registry_lock(detail::object_registry::acquire_lock());
     lock_guard other_lock(r.m_Lock);
 
@@ -262,8 +318,9 @@ namespace proposed_std
     }
     else
     {
+      // TODO: use allocator!!!
       // create node that holds our pointer and a no-op deleter            // identity workaround for MSVC 2013
-      m_pObjectNode = new detail::extended_object_node<T, T, decltype(detail::identity(&detail::EmptyDeleter<T>))>(m_PointerNode, p, p, &detail::EmptyDeleter<T>);  // TODO: noexcept vs. bad_alloc!!!
+      m_pObjectNode = new detail::extended_object_node<T, T, decltype(detail::identity(&detail::EmptyDeleter<T>))>(m_PointerNode, p, p, &detail::EmptyDeleter<T>);
     }
 
     m_pObjectNode = r.m_pObjectNode;
@@ -300,43 +357,6 @@ namespace proposed_std
     }
 
     assert(!m_PointerNode.is_linked());
-  }
-
-
-  template <typename T>
-  void compactable_ptr<T>::atomic_increment_access_proxy_count() const
-  {
-    lock_guard lock(m_Lock);
-
-    m_AccessProxyCount++;
-  }
-
-  template <typename T>
-  void compactable_ptr<T>::atomic_decrement_access_proxy_count() const
-  {
-    lock_guard lock(m_Lock);
-
-    m_AccessProxyCount--;
-  }
-
-  template <typename T>
-  typename compactable_ptr<T>::count compactable_ptr<T>::get_access_proxy_count() const
-  {
-    return m_AccessProxyCount;
-  }
-
-  template <typename T>
-  typename compactable_ptr<T>::lock_guard compactable_ptr<T>::acquire_lock() const
-  {
-    return lock_guard(m_Lock);
-  }
-
-  template <typename T>
-  void compactable_ptr<T>::register_object(detail::object_node_base& objNode) noexcept
-  {
-    lock_guard lock(detail::object_registry::acquire_lock());
-
-    detail::object_registry::register_object(objNode);
   }
 
 
@@ -411,7 +431,7 @@ namespace proposed_std
   template <typename T>
   access_proxy<T>& access_proxy<T>::operator=(const access_proxy& rhs)
   {
-    if (m_CompactablePtr)  // TODO: probably too defencive? an assert() should be enought!? Rational: assignment to an already "moved from" object is undefined behavior!
+    if (m_CompactablePtr)
     {
       m_CompactablePtr.atomic_decrement_access_proxy_count();
     }
@@ -425,7 +445,7 @@ namespace proposed_std
   template <typename T>
   access_proxy<T>& access_proxy<T>::operator=(access_proxy&& rhs)
   {
-    if (m_CompactablePtr)  // TODO: probably too defencive? an assert() should be enought!? Rational: assignment to an already "moved from" object is undefined behavior!
+    if (m_CompactablePtr)
     {
       m_CompactablePtr.atomic_decrement_access_proxy_count();
     }
@@ -453,7 +473,8 @@ namespace proposed_std
   {
     return m_CompactablePtr.m_pObjectNode->get();
   }
-}
+
+}  // namespace proposed_std
 
 #endif
 

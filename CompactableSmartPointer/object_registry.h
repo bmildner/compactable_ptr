@@ -3,13 +3,6 @@
 
 #pragma once
 
-
-#include <utility>
-#include <atomic>
-#include <thread>
-#include <functional>
-#include <type_traits>
-
 // "inclusion guard" macros for boost headers, dreaded MSVC code analysis causes warnings in boost headers ...
 # ifdef _MSC_VER
 #  include <codeanalysis\warnings.h>
@@ -24,10 +17,18 @@
 #  define BOOST_INCL_GUARD_END
 # endif
 
+
+#include <utility>
+#include <atomic>
+#include <thread>
+#include <functional>
+#include <type_traits>
+
 BOOST_INCL_GUARD_BEGIN
 #include <boost/intrusive/list.hpp>
 #include <boost/noncopyable.hpp>
 BOOST_INCL_GUARD_END
+
 
 #ifndef noexcept
 /// Compatibility with non-clang compilers.
@@ -35,7 +36,7 @@ BOOST_INCL_GUARD_END
 #  define __has_feature(x) 0
 # endif
 // Detect whether the compiler supports C++11 noexcept exception specifications.
-# if (defined(__GNUC__) && (__GNUC__ >= 4 && __GNUC_MINOR__ >= 7 ) && defined(__GXX_EXPERIMENTAL_CXX0X__))
+# if (defined(__GNUC__) && (__GNUC__ >= 4 && __GNUC_MINOR__ >= 7) && defined(__GXX_EXPERIMENTAL_CXX0X__))
 // GCC 4.7 and following have noexcept
 # elif defined(__clang__) && __has_feature(cxx_noexcept)
 // Clang 3.0 and above have noexcept
@@ -57,9 +58,6 @@ BOOST_INCL_GUARD_END
 
 namespace proposed_std
 {
-  template <typename T>
-  class compactable_ptr;
-
   namespace detail
   {
     // workaround for MSVC2013 bug that causes a "C3555: incorrect argument to 'decltype'" error
@@ -96,7 +94,7 @@ namespace proposed_std
         {
           if (!m_Empty)
           {
-            atomic_flag_clear(&m_Lock);
+            init_lock(m_Lock);
           }
         }
 
@@ -110,6 +108,10 @@ namespace proposed_std
     };
 
 
+    template <typename T>
+    class pointer_base;
+
+
     using object_hook  = boost::intrusive::list_base_hook<boost::intrusive::link_mode<boost::intrusive::safe_link>>;
     using pointer_hook = boost::intrusive::list_base_hook<boost::intrusive::link_mode<boost::intrusive::safe_link>>;
 
@@ -119,7 +121,7 @@ namespace proposed_std
         virtual ~pointer_node_base() = default;
 
         template <typename T>
-        static bool is_same_pointer(const compactable_ptr<T>& ptr, const pointer_node_base& pointer_node) noexcept
+        static bool is_same_pointer(const pointer_base<T>& ptr, const pointer_node_base& pointer_node) noexcept
         {
           return &pointer_node == &ptr.m_PointerNode;
         }
@@ -131,41 +133,41 @@ namespace proposed_std
     class pointer_node : public pointer_node_base
     {
       public:
-        using compactable_ptr = ::proposed_std::compactable_ptr<T>;
+        using pointer_base = ::proposed_std::detail::pointer_base<T>;
 
-        explicit pointer_node(compactable_ptr& ptr)  noexcept
+        explicit pointer_node(pointer_base& ptr)  noexcept
         : m_Pointer(ptr)
         {}
 
         virtual ~pointer_node() override = default;
 
-        compactable_ptr& get() const noexcept
+        pointer_base& get() const noexcept
         {
           return m_Pointer;
         }
 
       private:
-        compactable_ptr& m_Pointer;
+        pointer_base& m_Pointer;
     };
 
     template <typename T>
     class mutable_pointer_node : public pointer_node_base
     {
       public:
-        using compactable_ptr = ::proposed_std::compactable_ptr<T>;
+        using pointer_base = ::proposed_std::detail::pointer_base<T>;
 
-        explicit mutable_pointer_node(compactable_ptr& ptr)  noexcept
+        explicit mutable_pointer_node(pointer_base& ptr)  noexcept
         : m_pPointer(&ptr)
         {}
 
         virtual ~mutable_pointer_node() override = default;
 
-        compactable_ptr& get() const noexcept
+        pointer_base& get() const noexcept
         {
           return *m_Pointer;
         }
 
-        compactable_ptr* reset(compactable_ptr& newPtr) noexcept
+        pointer_base* reset(pointer_base& newPtr) noexcept
         {
           compactable_ptr* old = m_pPointer;
 
@@ -180,7 +182,7 @@ namespace proposed_std
         }
 
       private:
-        compactable_ptr* m_pPointer;
+        pointer_base* m_pPointer;
     };
 
 
@@ -356,12 +358,14 @@ namespace proposed_std
 
             // remove blocker node from managed node
             if (m_pManagedNode->remove_pointer(m_BlockerNode))
-            {
+            {  // destroy managed node if our blocker node was the last node referencing it
               detail::object_registry::deregister_object(*m_pManagedNode);  // is noexcept
 
+              // delete managed object
               m_pManagedNode->delete_object();  // is noexcept
 
-              delete m_pManagedNode;  // TODO: use allocator if set??
+              // delete managed object node
+              DefaultDeleter<object_node<ManagedType>, Allocator>()(m_Allocator, m_pManagedNode);
             }
 
             assert(!m_BlockerNode.is_linked());
@@ -385,7 +389,7 @@ namespace proposed_std
 
         virtual void delete_object() noexcept override
         {
-          // do not delete our object, only the object in the managed node may be deleted!
+          // delete our object only, the object in the managed node mast not be deleted!
           assert((m_Pointer = nullptr) == nullptr);
         }
 
@@ -414,7 +418,7 @@ namespace proposed_std
         lock    m_Lock;
     };
 
-  }
-}
+  }  // namespace detail
+}  // namespace proposed_std
 
 #endif

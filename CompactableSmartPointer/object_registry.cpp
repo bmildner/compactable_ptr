@@ -38,6 +38,6 @@ namespace proposed_std
       return lock_guard(g_ObjectRegistry.m_Lock);
     }
 
-  }
-}
+  }  // namespace detail
+}  // namespace proposed_std
 
