@@ -29,6 +29,10 @@ namespace proposed_std
         using lock = detail::lock;
         using lock_guard = detail::lock_guard;
 
+        using object_node  = detail::object_node<T>;
+        using pointer_node = detail::pointer_node<T>;
+
+        using size_type = typename object_node::size_type;
 
         // do not call while holding the lock as this may cause a dead-lock!
         void atomic_increment_access_proxy_count() const;
@@ -38,14 +42,26 @@ namespace proposed_std
 
         lock_guard acquire_lock() const;
 
+        size_type use_count() const noexcept
+        {
+          if (m_pObjectNode != nullptr)
+          {
+            return m_pObjectNode->use_count();
+          }
+          else
+          {
+            return 0;
+          }
+        }
+
         static void register_object(detail::object_node_base& objNode) noexcept;
 
 
         mutable lock  m_Lock;
         mutable count m_AccessProxyCount;
 
-        detail::object_node<T>* m_pObjectNode;
-        detail::pointer_node<T> m_PointerNode;
+        object_node* m_pObjectNode;
+        pointer_node m_PointerNode;
     };
 
     template <typename T>
@@ -86,6 +102,7 @@ namespace proposed_std
 
   }  // namespace detail
 
+  // TODO: add make_compactable template function
 
   template <typename T>
   class access_proxy;
@@ -94,8 +111,10 @@ namespace proposed_std
   class compactable_ptr : protected detail::pointer_base<T>
   {
     public:
+      using base = pointer_base<T>;
       using element_type = T;
       using access_proxy = access_proxy<T>;
+      using size_type = typename base::size_type;
 
       // constructors
       constexpr compactable_ptr() noexcept;
@@ -118,11 +137,11 @@ namespace proposed_std
       compactable_ptr(compactable_ptr&& r) noexcept;
       template <class Y, class = typename std::enable_if<std::is_convertible<Y*, T*>::value>::type>  // Y* must be convertible to T* 
       compactable_ptr(compactable_ptr<Y>&& r); // diff to shared_ptr: noexcept
-      compactable_ptr(std::shared_ptr<T>&& r) noexcept;  // TODO: remove??
-      template <class Y>
-      compactable_ptr(std::shared_ptr<Y>&& r) noexcept;  // TODO: remove??
-      template <class Y> 
-      explicit compactable_ptr(const std::weak_ptr<Y>& r);  // TODO: remove??
+      //compactable_ptr(std::shared_ptr<T>&& r) noexcept;  // TODO: remove??
+      //template <class Y>
+      //compactable_ptr(std::shared_ptr<Y>&& r) noexcept;  // TODO: remove??
+      //template <class Y> 
+      //explicit compactable_ptr(const std::weak_ptr<Y>& r);  // TODO: remove??
       template <class Y, class D> 
       compactable_ptr(std::unique_ptr<Y, D>&& r);
 //      : m_SharedPtr()
@@ -158,7 +177,7 @@ namespace proposed_std
       access_proxy get() const noexcept;
       access_proxy operator*() const noexcept;
 
-      long use_count() const noexcept;
+      size_type use_count() const noexcept;
       bool unique() const noexcept;
       explicit operator bool() const noexcept;
       template <class U> 
@@ -179,7 +198,7 @@ namespace proposed_std
   // constructors
   template <typename T>
   constexpr compactable_ptr<T>::compactable_ptr() noexcept
-    : pointer_base()
+  : base()
   {}
 
   template <typename T>
@@ -187,6 +206,7 @@ namespace proposed_std
   compactable_ptr<T>::compactable_ptr(Y* p)
   : compactable_ptr()
   {
+    // TODO: use allocator
     m_pObjectNode = new detail::object_node<T>(m_PointerNode, p);
 
     register_object(*m_pObjectNode);  // is noexcept
@@ -197,6 +217,7 @@ namespace proposed_std
   compactable_ptr<T>::compactable_ptr(Y* p, D d)
   : compactable_ptr()
   {
+    // TODO: use allocator
     m_pObjectNode = new detail::extended_object_node<T, Y, D>(m_PointerNode, p, p, d);
 
     register_object(*m_pObjectNode);  // is noexcept
@@ -234,6 +255,7 @@ namespace proposed_std
   compactable_ptr<T>::compactable_ptr(std::nullptr_t p, D d)
   : compactable_ptr()
   {
+    // TODO: use allocator
     // we need to create a node to hold the deleter!
     m_pObjectNode = new detail::extended_object_node<T, T, D>(m_PointerNode, p, p, d);
 
@@ -274,13 +296,15 @@ namespace proposed_std
 
       if (r.m_pObjectNode != nullptr)
       {
+        // TODO: use allocator
         // create node that holds the original node and our pointer
-        m_pObjectNode = new detail::aliasing_object_node<T, Y>(m_PointerNode, p, *r.m_pObjectNode);
+        m_pObjectNode = new detail::aliasing_object_node<T, Y, typename compactable_ptr<Y>::Allocator>(m_PointerNode, p, *r.m_pObjectNode, r.m_Allocator);
       }
       else
       {
+        // TODO: use allocator
         // create node that holds our pointer and a no-op deleter            // identity workaround for MSVC 2013
-        m_pObjectNode = new detail::extended_object_node<T, T, decltype(detail::identity(&detail::EmptyDeleter<T>))>(m_PointerNode, p, p, &detail::EmptyDeleter<T>);  // TODO: noexcept vs. bad_alloc!!!
+        m_pObjectNode = new detail::extended_object_node<T, T, decltype(detail::identity(&detail::EmptyDeleter<T>)), typename compactable_ptr<Y>::Allocator>(m_PointerNode, p, p, &detail::EmptyDeleter<T>, r.Allocator);  // TODO: noexcept vs. bad_alloc!!!
       }
     }
 
@@ -313,14 +337,15 @@ namespace proposed_std
 
     if (r.m_pObjectNode != nullptr)
     {
+      // TODO: use allocator
       // create node that holds the original node and our pointer
-      m_pObjectNode = new detail::aliasing_object_node<T, Y>(m_PointerNode, p, *r.m_pObjectNode);
+      m_pObjectNode = new detail::aliasing_object_node<T, Y, typename compactable_ptr<Y>::Allocator>(m_PointerNode, p, *r.m_pObjectNode, std::move(r.m_Allocator));
     }
     else
     {
       // TODO: use allocator!!!
       // create node that holds our pointer and a no-op deleter            // identity workaround for MSVC 2013
-      m_pObjectNode = new detail::extended_object_node<T, T, decltype(detail::identity(&detail::EmptyDeleter<T>))>(m_PointerNode, p, p, &detail::EmptyDeleter<T>);
+      m_pObjectNode = new detail::extended_object_node<T, T, decltype(detail::identity(&detail::EmptyDeleter<T>)), typename compactable_ptr<Y>::Allocator>(m_PointerNode, p, p, &detail::EmptyDeleter<T>, std::move(r.m_Allocator));
     }
 
     m_pObjectNode = r.m_pObjectNode;
@@ -352,11 +377,28 @@ namespace proposed_std
 
         m_pObjectNode->delete_object();  // is noexcept
 
-        delete m_pObjectNode;  // TODO: use allocator if set??
+        m_pObjectNode->get_node_deleter()(m_pObjectNode);
+
+//        detail::default_deleter<object_node<ManagedType>, Allocator>()(m_Allocator, m_pManagedNode);
+        //delete m_pObjectNode;  // TODO: use allocator if set??
       }
     }
 
     assert(!m_PointerNode.is_linked());
+  }
+
+
+  // observers
+  template <typename T>
+  typename compactable_ptr<T>::size_type compactable_ptr<T>::use_count() const noexcept
+  {
+    return base::use_count();
+  }
+
+  template <typename T>
+  bool compactable_ptr<T>::unique() const noexcept
+  {
+    return use_count() == 1;
   }
 
 

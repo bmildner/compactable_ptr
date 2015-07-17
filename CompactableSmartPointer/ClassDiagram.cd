@@ -1,0 +1,102 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ClassDiagram MajorVersion="1" MinorVersion="1" MembersFormat="NameAndType">
+  <Class Name="proposed_std::detail::pointer_base&lt;T&gt;">
+    <Position X="6.5" Y="6.75" Width="3.25" />
+    <TypeIdentifier>
+      <HashCode>CAAAAAAAAABAAAAAAAAAAACACAAARAAAFAAIAAAIAAA=</HashCode>
+      <FileName>compactable_ptr.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="proposed_std::access_proxy&lt;T&gt;" Collapsed="true">
+    <Position X="12.75" Y="0.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAIAAAAAAAAAAAQgAABAAAAAAAAAAgAAAAAAA=</HashCode>
+      <FileName>compactable_ptr.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="proposed_std::compactable_ptr&lt;T&gt;">
+    <Position X="6.5" Y="10.5" Width="3.25" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAEAAAAAAAEAAAgQAAAAQAAAIAAAQAggAAAAAg=</HashCode>
+      <FileName>compactable_ptr.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="proposed_std::detail::lock_guard" Collapsed="true">
+    <Position X="14.5" Y="0.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAIAAAAAAAAAABAAAABAAEAAgAAAAAAA=</HashCode>
+      <FileName>object_registry.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="proposed_std::detail::pointer_node_base">
+    <Position X="8.25" Y="0.75" Width="1.75" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAgAAAAAAgAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>object_registry.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="proposed_std::detail::pointer_node&lt;T&gt;">
+    <Position X="6.5" Y="3" Width="2.25" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAAgAAQAAAAIBAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>object_registry.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="proposed_std::detail::mutable_pointer_node&lt;T&gt;">
+    <Position X="9.5" Y="3" Width="2.25" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAEAAAAAIAAAAAgQAAAAAAAAAAAEAAAAAAAAAA=</HashCode>
+      <FileName>object_registry.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="proposed_std::detail::object_node_base">
+    <Position X="1.75" Y="0.75" Width="2.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAgAAAAEAAAAAAAgAAAAgBAAACABAAA=</HashCode>
+      <FileName>object_registry.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="proposed_std::detail::object_node&lt;T&gt;">
+    <Position X="2" Y="4" Width="2.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAACAAgAEQAAAAAAAAAAAABAAACAAAAA=</HashCode>
+      <FileName>object_registry.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="proposed_std::detail::extended_object_node&lt;T, ManagedType, Deleter, Allocator&gt;">
+    <Position X="0.5" Y="7" Width="4.25" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAIAAAAAAQAAAAAEAAAAAABAAACIAAAA=</HashCode>
+      <FileName>object_registry.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="proposed_std::detail::aliasing_object_node&lt;T, ManagedType, Allocator&gt;">
+    <Position X="0.75" Y="10" Width="4.25" />
+    <TypeIdentifier>
+      <HashCode>ACAAAAAAAAAAAAgAAAAAgAACAAAAAAAAAAAAACABAAA=</HashCode>
+      <FileName>object_registry.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="proposed_std::detail::object_registry" Collapsed="true">
+    <Position X="12.75" Y="1.75" Width="1.5" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAABQAAAAABAAAACAAAAAAABAEAAAAAAAAAA=</HashCode>
+      <FileName>object_registry.h</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Struct Name="proposed_std::detail::default_deleter&lt;T, Alloc&gt;" Collapsed="true">
+    <Position X="12.75" Y="3" Width="2" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>object_registry.h</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Struct Name="proposed_std::detail::default_deleter&lt;T, void&gt;" Collapsed="true">
+    <Position X="14.5" Y="3" Width="2" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>object_registry.h</FileName>
+    </TypeIdentifier>
+  </Struct>
+  <Font Name="Segoe UI" Size="9" />
+</ClassDiagram>

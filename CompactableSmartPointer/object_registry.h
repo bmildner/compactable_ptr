@@ -23,6 +23,7 @@
 #include <thread>
 #include <functional>
 #include <type_traits>
+#include <typeindex>
 
 BOOST_INCL_GUARD_BEGIN
 #include <boost/intrusive/list.hpp>
@@ -187,7 +188,7 @@ namespace proposed_std
 
 
     template <typename T, typename Alloc = void>
-    struct DefaultDeleter
+    struct default_deleter
     {
       void operator()(Alloc& a, T* ptr) noexcept
       {
@@ -207,7 +208,7 @@ namespace proposed_std
     };
 
     template <typename T>
-    struct DefaultDeleter<T, void>
+    struct default_deleter<T, void>
     {
       void operator()(T* ptr) noexcept
       {
@@ -216,16 +217,21 @@ namespace proposed_std
     };
 
     template <typename T>
-    void EmptyDeleter(T*)
+    void empty_deleter(T*)
     {}
 
     template <typename T>
-    using DefaultAllocator = std::allocator<T>;
+    using default_allocator = std::allocator<T>;
 
 
     class object_node_base : public object_hook, private boost::noncopyable
     {
+      protected:
+        using pointers = boost::intrusive::list<pointer_node_base, boost::intrusive::base_hook<pointer_hook>, boost::intrusive::constant_time_size<false>>;
+
       public:
+        using size_type = pointers::size_type;
+
         explicit object_node_base(pointer_node_base& pointer_node) noexcept
         : m_Pointers()
         {
@@ -256,9 +262,16 @@ namespace proposed_std
 
         virtual void delete_object() noexcept = 0;
 
-      protected:
-        using pointers = boost::intrusive::list<pointer_node_base, boost::intrusive::base_hook<pointer_hook>, boost::intrusive::constant_time_size<false>>;
+        using node_deleter = std::function<void(object_node_base*)>;
 
+        virtual node_deleter get_node_deleter() const = 0;
+
+        size_type use_count() const noexcept
+        {
+          return m_Pointers.size();
+        }
+
+      protected:
         pointers m_Pointers;
     };
 
@@ -266,12 +279,15 @@ namespace proposed_std
     class object_node : public object_node_base
     {
       public:
+        using size_type = object_node_base::size_type;
+
         object_node(pointer_node_base& pointer_node, T* ptr) noexcept
         : object_node_base(pointer_node), m_Pointer(ptr)
         {}
 
         virtual ~object_node() override
         {
+          // TODO: always delete our object ??
           assert(m_Pointer == nullptr);
         }
 
@@ -282,16 +298,29 @@ namespace proposed_std
 
         virtual void delete_object() noexcept override
         {
-          DefaultDeleter<T>()(m_Pointer);  // is noexcept
+          default_deleter<T>()(m_Pointer);  // is noexcept
 
           assert((m_Pointer = nullptr) == nullptr);
+        }
+
+        virtual node_deleter get_node_deleter() const override
+        {
+          return [](object_node_base* pNode) -> void
+                 {
+                   if (pNode != nullptr)
+                   {
+                     assert(std::type_index(typeid(*pNode)) == std::type_index(typeid(object_node<T>)));
+
+                     default_deleter<object_node<T>>()(dynamic_cast<object_node<T>*>(pNode));
+                   }            
+                 };
         }
 
       protected:
         T* m_Pointer;
     };
 
-    template <typename T, typename ManagedType, typename Deleter = DefaultDeleter<ManagedType>, typename Allocator = DefaultAllocator<ManagedType>>
+    template <typename T, typename ManagedType, typename Deleter = default_deleter<ManagedType>, typename Allocator = default_allocator<ManagedType>>
     class extended_object_node : public object_node<T>
     {
       public:
@@ -304,10 +333,10 @@ namespace proposed_std
 #pragma warning (push)
 #pragma warning (disable : 4127)  // no need for a warning that the conditional expression is constant ...
           // use allocator (via DefaultDeleter specialization) as deleter if the default deleter is present and the allocator is not the default allocator
-          if (std::is_same<Deleter, DefaultDeleter<ManagedType>>::value && !std::is_same<Allocator, DefaultAllocator<ManagedType>>::value)
+          if (std::is_same<Deleter, default_deleter<ManagedType>>::value && !std::is_same<Allocator, default_allocator<ManagedType>>::value)
 #pragma warning (pop)
           {
-            DefaultDeleter<ManagedType, Allocator>()(m_Allocator, m_ManagedPtr);
+            default_deleter<ManagedType, Allocator>()(m_Allocator, m_ManagedPtr);
           }
           else
           {
@@ -318,18 +347,36 @@ namespace proposed_std
           assert((m_Pointer = nullptr) == nullptr);
         }
 
+        virtual node_deleter get_node_deleter() const override
+        {
+          auto alloc = m_Allocator;  // TODO: do we really need to make a copy ?!?!
+
+          return [alloc](object_node_base* pNode) -> void
+          {
+            if (pNode != nullptr)
+            {
+              assert(std::type_index(typeid(*pNode)) == std::type_index(typeid(extended_object_node<T, ManagedType, Deleter, Allocator>)));
+
+              auto allocator = alloc;  // TODO: do we really need to make a copy again ?!?!?!?!?!?!
+
+              default_deleter<object_node<T>, Allocator>()(allocator, dynamic_cast<extended_object_node<T, ManagedType, Deleter, Allocator>*>(pNode));
+            }
+          };
+        }
+
+
       private:
         ManagedType* m_ManagedPtr;
         Deleter      m_Deleter;
         Allocator    m_Allocator;
     };
 
-    template <typename T, typename ManagedType>                          // identity workaround for MSVC 2013
-    class aliasing_object_node : public extended_object_node<T, T, decltype(identity(&EmptyDeleter<T>))>
+    template <typename T, typename ManagedType, typename Allocator>      // identity workaround for MSVC 2013
+    class aliasing_object_node : public extended_object_node<T, T, decltype(identity(&EmptyDeleter<T>)), Allocator>
     {
       public:
-        aliasing_object_node(pointer_node<T>& pointer_node, T* ptr, object_node<ManagedType>& managedNode) noexcept
-        : extended_object_node(pointer_node, ptr, ptr, EmptyDeleter<T>), m_pManagedNode(&managedNode), m_BlockerNode(pointer_node.get())
+        aliasing_object_node(pointer_node<T>& pointer_node, T* ptr, object_node<ManagedType>& managedNode, Allocator allocator = Allocator()) noexcept
+        : extended_object_node(pointer_node, ptr, ptr, std::move(allocator)), m_pManagedNode(&managedNode), m_BlockerNode(pointer_node.get())
         {
           assert(m_pManagedNode != nullptr);
 
@@ -364,6 +411,7 @@ namespace proposed_std
               // delete managed object
               m_pManagedNode->delete_object();  // is noexcept
 
+              // TODO: is the allocator handling correct?? we always default to the default allocator type !?!?!?!?
               // delete managed object node
               DefaultDeleter<object_node<ManagedType>, Allocator>()(m_Allocator, m_pManagedNode);
             }
@@ -389,7 +437,7 @@ namespace proposed_std
 
         virtual void delete_object() noexcept override
         {
-          // delete our object only, the object in the managed node mast not be deleted!
+          // delete our object only, the object in the managed node must not be deleted!
           assert((m_Pointer = nullptr) == nullptr);
         }
 

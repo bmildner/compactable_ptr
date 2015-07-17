@@ -37,6 +37,11 @@ bool operator==(const SimpleAllocator<T>&, const SimpleAllocator<U>&);
 template <class T, class U>
 bool operator!=(const SimpleAllocator<T>&, const SimpleAllocator<U>&);
 
+
+template class compactable_ptr<int>;
+template class compactable_ptr<double>;
+template class compactable_ptr<std::wstring>;
+
 int main()
 {
   struct A { int m_Int; };
@@ -75,6 +80,10 @@ int main()
 
   shared_ptr<A> a1_ptr(new B, [](B* ptr) -> void { delete ptr; });
   shared_ptr<A> a2_ptr(shared_ptr<B>(new B));
+
+  {
+    compactable_ptr<A> a8_ptr(new B, DeleteFkt<A>, SimpleAllocator<double>());
+  }
 
   return 0;
 }
