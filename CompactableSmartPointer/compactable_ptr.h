@@ -378,9 +378,6 @@ namespace proposed_std
         m_pObjectNode->delete_object();  // is noexcept
 
         m_pObjectNode->get_node_deleter()(m_pObjectNode);
-
-//        detail::default_deleter<object_node<ManagedType>, Allocator>()(m_Allocator, m_pManagedNode);
-        //delete m_pObjectNode;  // TODO: use allocator if set??
       }
     }
 
