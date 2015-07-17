@@ -247,7 +247,7 @@ namespace proposed_std
 
   template <typename T>
   constexpr compactable_ptr<T>::compactable_ptr(std::nullptr_t) noexcept
-  : compactable_ptr()
+  : base()
   {}
 
   template <typename T>
