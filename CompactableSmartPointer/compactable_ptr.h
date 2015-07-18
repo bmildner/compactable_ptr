@@ -23,6 +23,12 @@ namespace proposed_std
           detail::init_lock(m_Lock);  // is noexcept
         }
 
+        pointer_base(pointer_base&& other) noexcept
+        : m_Lock(), m_AccessProxyCount(std::move(other.m_AccessProxyCount)), m_pObjectNode(std::move(other.m_pObjectNode)), m_PointerNode(std::move(other.m_PointerNode))
+        {
+          detail::init_lock(m_Lock);  // is noexcept
+        }
+
       protected:
         using count = std::size_t;
 
@@ -157,9 +163,9 @@ namespace proposed_std
       compactable_ptr& operator=(compactable_ptr&& r) noexcept;
       template <class Y> 
       compactable_ptr& operator=(compactable_ptr<Y>&& r) noexcept;
-      compactable_ptr& operator=(std::shared_ptr<T>&& r) noexcept;  // TODO: remove??
-      template <class Y> 
-      compactable_ptr& operator=(std::shared_ptr<Y>&& r) noexcept;  // TODO: remove??
+      //compactable_ptr& operator=(std::shared_ptr<T>&& r) noexcept;  // TODO: remove??
+      //template <class Y> 
+      //compactable_ptr& operator=(std::shared_ptr<Y>&& r) noexcept;  // TODO: remove??
       template <class Y, class D> 
       compactable_ptr& operator=(std::unique_ptr<Y, D>&& r);
 
@@ -360,6 +366,10 @@ namespace proposed_std
     assert(!r);
   }
 
+  template <typename T>
+  compactable_ptr<T>::compactable_ptr(compactable_ptr&& r) noexcept
+  : compactable_ptr<T>::compactable_ptr<T>(std::move(r))
+  {}
 
   // destructor
   template <typename T>
