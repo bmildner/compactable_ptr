@@ -130,7 +130,7 @@ namespace proposed_std
       compactable_ptr(Y* p, D d);
       template <class Y, class D, class A> 
       compactable_ptr(Y* p, D d, A a);
-      constexpr compactable_ptr(std::nullptr_t)  noexcept;
+      constexpr compactable_ptr(std::nullptr_t) noexcept;
       template <class D> 
       compactable_ptr(std::nullptr_t p, D d);
       template <class D, class A> 
@@ -178,6 +178,7 @@ namespace proposed_std
       void reset(Y* p, D d);
       template <class Y>
       void reset(Y* p);
+      void reset(std::nullptr_t) noexcept;
       void reset() noexcept;
 
 
@@ -201,6 +202,8 @@ namespace proposed_std
 
       friend class ::proposed_std::detail::pointer_node_base;
 
+      // internal implementation of reset to nullptr, caller must acquire the lock first!
+      void reset(detail::lock_guard&) noexcept;
   };
 
   // constructors
@@ -214,10 +217,7 @@ namespace proposed_std
   compactable_ptr<T>::compactable_ptr(Y* p)
   : compactable_ptr()
   {
-    // TODO: use allocator
-    m_pObjectNode = new detail::object_node<T>(m_PointerNode, p);
-
-    register_object(*m_pObjectNode);  // is noexcept
+    reset(p);
   }
 
   template <typename T>
@@ -225,10 +225,7 @@ namespace proposed_std
   compactable_ptr<T>::compactable_ptr(Y* p, D d)
   : compactable_ptr()
   {
-    // TODO: use allocator
-    m_pObjectNode = new detail::extended_object_node<T, Y, D>(m_PointerNode, p, p, d);
-
-    register_object(*m_pObjectNode);  // is noexcept
+    reset(p, d);
   }
 
   template <typename T>
@@ -236,21 +233,7 @@ namespace proposed_std
   compactable_ptr<T>::compactable_ptr(Y* p, D d, A a)
   : compactable_ptr()
   {
-    using node_type    = detail::extended_object_node<T, Y, D, A>;
-    using alloc_traits = std::allocator_traits<A>::rebind_traits<node_type>;
-
-    std::allocator_traits<A>::rebind_alloc<node_type> alloc(a);
-
-    // allocate memory and secure it in guard
-    std::unique_ptr<node_type> guard_ptr(alloc_traits::allocate(alloc, 1));
-    
-    // construct node
-    alloc_traits::construct(alloc, guard_ptr.get(), m_PointerNode, p, p, std::move(d), std::move(alloc));  // TODO: is that move(alloc) OK ???
-
-    // release guard and get pointer
-    m_pObjectNode = guard_ptr.release();
-
-    register_object(*m_pObjectNode);  // is noexcept
+    reset(p, d, a);
   }
 
   template <typename T>
@@ -263,11 +246,7 @@ namespace proposed_std
   compactable_ptr<T>::compactable_ptr(std::nullptr_t p, D d)
   : compactable_ptr()
   {
-    // TODO: use allocator
-    // we need to create a node to hold the deleter!
-    m_pObjectNode = new detail::extended_object_node<T, T, D>(m_PointerNode, p, p, d);
-
-    register_object(*m_pObjectNode);  // is noexcept
+    reset<T, D>(p, d);
   }
 
   template <typename T>
@@ -275,21 +254,7 @@ namespace proposed_std
   compactable_ptr<T>::compactable_ptr(std::nullptr_t p, D d, A a)
   : compactable_ptr()
   {
-    using node_type = detail::extended_object_node<T, T, D, A>;
-    using alloc_traits = std::allocator_traits<A>::rebind_traits<node_type>;
-
-    std::allocator_traits<A>::rebind_alloc<node_type> alloc(a);
-
-    // allocate memory and secure it in guard
-    std::unique_ptr<node_type> guard_ptr(alloc_traits::allocate(alloc, 1));
-
-    // construct node
-    alloc_traits::construct(alloc, guard_ptr.get(), m_PointerNode, p, p, std::move(d), std::move(alloc));  // TODO: is that move(alloc) OK ???
-
-    // release guard and get pointer
-    m_pObjectNode = guard_ptr.release();
-
-    register_object(*m_pObjectNode);  // is noexcept
+    reset<T, D, A>(p, d, a);
   }
 
   template <typename T>
@@ -377,24 +342,7 @@ namespace proposed_std
   template <typename T>
   compactable_ptr<T>::~compactable_ptr()
   {
-    // TODO: call reset() !!!!!
-    lock_guard lock(m_Lock);
-
-    if (m_pObjectNode != nullptr)
-    {
-      lock_guard regirstry_lock(detail::object_registry::acquire_lock());
-
-      if (m_pObjectNode->remove_pointer(m_PointerNode))  // is noexcept
-      {
-        detail::object_registry::deregister_object(*m_pObjectNode);  // is noexcept
-
-        m_pObjectNode->delete_object();  // is noexcept
-
-        m_pObjectNode->get_node_deleter()(m_pObjectNode);
-      }
-    }
-
-    assert(!m_PointerNode.is_linked());
+    reset();
   }
 
 
@@ -405,21 +353,8 @@ namespace proposed_std
   {
     lock_guard lock(m_Lock);
 
-    if (m_pObjectNode != nullptr)
-    {
-      lock_guard regirstry_lock(detail::object_registry::acquire_lock());
-
-      if (m_pObjectNode->remove_pointer(m_PointerNode))  // is noexcept
-      {
-        detail::object_registry::deregister_object(*m_pObjectNode);  // is noexcept
-
-        m_pObjectNode->delete_object();  // is noexcept
-
-        m_pObjectNode->get_node_deleter()(m_pObjectNode);
-      }
-    }
-
-    assert(!m_PointerNode.is_linked());
+    // cleanup before we manage a new object
+    reset(lock);
 
     if (ptr != nullptr)
     {
@@ -473,20 +408,57 @@ namespace proposed_std
   template <class Y, class D>
   void compactable_ptr<T>::reset(Y* p, D d)
   {
-    reset(p, d, detail::extended_object_node<T>::allocator_type());
+    using allocator_type = typename detail::extended_object_node<T, Y>::allocator_type;
+
+    reset<Y, D, allocator_type>(p, d, allocator_type());
   }
 
   template <typename T>
   template <class Y>
   void compactable_ptr<T>::reset(Y* p)
   {
-    reset(p, detail::extended_object_node<T, T>::deleter_type(), detail::extended_object_node<T, T>::allocator_type());
+    // call reset with default types for deleter and allocator
+    using allocator_type = typename detail::extended_object_node<T, Y>::allocator_type;
+    using deleter_type   = typename detail::extended_object_node<T, Y>::deleter_type;
+
+    reset<Y, deleter_type, allocator_type>(p, deleter_type(), allocator_type());
+  }
+
+  template <typename T>
+  void compactable_ptr<T>::reset(std::nullptr_t) noexcept
+  {
+    reset();
   }
 
   template <typename T>
   void compactable_ptr<T>::reset() noexcept  // TODO: move reset to nullptr into own noexcept implementation!!
   {
-    reset<T>(nullptr);
+    lock_guard lock(m_Lock);
+
+    reset(lock);
+  }
+
+  template <typename T>
+  void compactable_ptr<T>::reset(detail::lock_guard&) noexcept
+  {
+    if (m_pObjectNode != nullptr)
+    {
+      lock_guard regirstry_lock(detail::object_registry::acquire_lock());
+
+      if (m_pObjectNode->remove_pointer(m_PointerNode))  // is noexcept
+      {
+        detail::object_registry::deregister_object(*m_pObjectNode);  // is noexcept
+
+        m_pObjectNode->delete_object();  // is noexcept
+
+        m_pObjectNode->get_node_deleter()(m_pObjectNode);
+      }
+
+      m_pObjectNode = nullptr;
+    }
+
+    assert(m_pObjectNode == nullptr);
+    assert(!m_PointerNode.is_linked());
   }
 
 

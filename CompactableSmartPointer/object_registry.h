@@ -42,7 +42,7 @@ BOOST_INCL_GUARD_END
 # elif defined(__clang__) && __has_feature(cxx_noexcept)
 // Clang 3.0 and above have noexcept
 # elif defined(_MSC_VER) && (_MSC_VER >= 1900)
-// MSVC 2015 and above should have noexcept!?
+// MSVC 2015 and above have noexcept!
 # else
 #  define noexcept throw()
 # endif
@@ -50,7 +50,7 @@ BOOST_INCL_GUARD_END
 
 #ifndef constexpr
 # if defined(_MSC_VER) && (_MSC_VER >= 1900)
-// MSVC 2015 and above should have constexpr!?
+// MSVC 2015 and above have constexpr!
 # else
 #  define constexpr
 # endif
