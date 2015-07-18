@@ -142,6 +142,8 @@ namespace proposed_std
 
         virtual ~pointer_node() override = default;
 
+        pointer_node& operator=(const pointer_node&) = delete;
+
         pointer_base& get() const noexcept
         {
           return m_Pointer;
