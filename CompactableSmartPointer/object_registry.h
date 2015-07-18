@@ -326,6 +326,9 @@ namespace proposed_std
     class extended_object_node : public object_node<T>
     {
       public:
+        using deleter_type = Deleter;
+        using allocator_type = Allocator;
+
         extended_object_node(pointer_node_base& pointer_node, T* ptr, ManagedType* managedPtr, Deleter deleter = Deleter(), Allocator allocator = Allocator()) noexcept
         : object_node(pointer_node, ptr), m_ManagedPtr(managedPtr), m_Deleter(std::move(deleter)), m_Allocator(std::move(allocator))
         {}
