@@ -294,7 +294,10 @@ namespace proposed_std
 
     m_pObjectNode = r.m_pObjectNode;
 
-    m_pObjectNode->add_pointer(m_PointerNode);
+    if (m_pObjectNode != nullptr)
+    {
+      m_pObjectNode->add_pointer(m_PointerNode);
+    }
   }
 
   template <typename T>
@@ -463,6 +466,12 @@ namespace proposed_std
 
 
   // observers
+  template<typename T>
+  typename compactable_ptr<T>::access_proxy compactable_ptr<T>::get() const noexcept
+  {
+    return access_proxy(*this);
+  }
+
   template <typename T>
   typename compactable_ptr<T>::size_type compactable_ptr<T>::use_count() const noexcept
   {
@@ -473,6 +482,12 @@ namespace proposed_std
   bool compactable_ptr<T>::unique() const noexcept
   {
     return use_count() == 1;
+  }
+
+  template<typename T>
+  inline compactable_ptr<T>::operator bool() const noexcept
+  {
+    return m_pObjectNode != nullptr;
   }
 
 
@@ -486,8 +501,8 @@ namespace proposed_std
       explicit access_proxy(const compactable_ptr& ptr);
       explicit access_proxy(compactable_ptr&& rhs);
 
-      explicit access_proxy(const access_proxy& rhs);
-      explicit access_proxy(access_proxy&& rhs);
+      access_proxy(const access_proxy& rhs);
+      access_proxy(access_proxy&& rhs);
 
       // detructor
       ~access_proxy();
