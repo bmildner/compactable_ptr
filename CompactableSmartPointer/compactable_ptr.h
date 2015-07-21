@@ -361,9 +361,12 @@ namespace proposed_std
 
     if (ptr != nullptr)
     {
+#pragma warning (push)
+#pragma warning (disable : 4127)  // no need for a warning that the conditional expression is constant ...
       // use simple object node if deleter and allocator types are the default types!
-      if ((std::type_index(typeid(D)) == std::type_index(typeid(typename detail::extended_object_node<T, T>::deleter_type))) &&
-          (std::type_index(typeid(A)) == std::type_index(typeid(typename detail::extended_object_node<T, T>::allocator_type))))
+      if (std::is_same<D, typename detail::extended_object_node<T, T>::deleter_type>::value &&
+          std::is_same<A, typename detail::extended_object_node<T, T>::allocator_type>::value)
+#pragma warning (pop)
       {
         using node_type = detail::object_node<T>;
         using alloc_traits = std::allocator_traits<A>::rebind_traits<node_type>;
